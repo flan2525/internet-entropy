@@ -1,0 +1,16 @@
+name: Official observation
+
+on:
+  schedule:
+    - cron: '17 2 * * 1'
+  workflow_dispatch:
+
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger fixed observation
+        env:
+          PUBLIC_APP_URL: https://internet-entropy.pages.dev
+          OBSERVATION_CRON_SECRET: ${{ secrets.OBSERVATION_CRON_SECRET }}
+        run: npm run observe:official --prefix .

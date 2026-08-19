@@ -1,0 +1,18 @@
+{
+  "version": "mvp-1",
+  "region": "JP",
+  "language": "ja",
+  "selectionReason": "長期比較しやすく、違法・有害・個人攻撃につながりにくい一般的な情報探索を選ぶ。各分野2語、上位10件で無料枠と取得負荷を抑える。",
+  "queries": [
+    { "domain": "医療・健康", "query": "睡眠 改善 方法", "enabled": true },
+    { "domain": "医療・健康", "query": "花粉症 対策", "enabled": true },
+    { "domain": "災害・防災", "query": "防災 備蓄", "enabled": true },
+    { "domain": "災害・防災", "query": "南海トラフ 地震", "enabled": true },
+    { "domain": "科学・技術", "query": "生成AI 仕組み", "enabled": true },
+    { "domain": "科学・技術", "query": "再生可能エネルギー", "enabled": true },
+    { "domain": "ニュース・時事", "query": "選挙 仕組み", "enabled": true },
+    { "domain": "ニュース・時事", "query": "物価 上昇 理由", "enabled": true },
+    { "domain": "製品レビュー", "query": "ノートパソコン 選び方", "enabled": true },
+    { "domain": "製品レビュー", "query": "ワイヤレスイヤホン 比較", "enabled": true }
+  ]
+}

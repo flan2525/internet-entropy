@@ -1,0 +1,16 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "internet-entropy",
+  "compatibility_date": "2026-08-19",
+  "pages_build_output_dir": "./dist",
+  "d1_databases": [
+    {
+      "binding": "ENTROPY_DB",
+      "database_name": "internet-entropy-db",
+      "database_id": "18180715-5a86-4933-ba1c-de07e4fb1262"
+    }
+  ],
+  "vars": {
+    "PUBLIC_APP_URL": "https://internet-entropy.pages.dev"
+  }
+}
