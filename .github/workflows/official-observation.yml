@@ -9,6 +9,15 @@ jobs:
   observe:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
       - name: Trigger fixed observation
         env:
           PUBLIC_APP_URL: https://internet-entropy.pages.dev
