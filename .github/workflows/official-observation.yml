@@ -22,4 +22,5 @@ jobs:
         env:
           PUBLIC_APP_URL: https://internet-entropy.pages.dev
           OBSERVATION_CRON_SECRET: ${{ secrets.OBSERVATION_CRON_SECRET }}
+          OBSERVATION_RUN_TYPE: ${{ github.event_name == 'schedule' && 'scheduled' || 'manual_official' }}
         run: npm run observe:official --prefix .

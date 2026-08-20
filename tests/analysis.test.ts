@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { analyzeResults, calculateWeightedMetricScore, classifyHttpStatus, normalizeUrl } from '../functions/lib/analysis'
+import { analyzeResults, calculateWeightedMetricScore, canCalculatePersistence, classifyHttpStatus, normalizeUrl, PERSISTENCE_REQUIREMENTS } from '../functions/lib/analysis'
 
 describe('analysis primitives', () => {
   it('normalizes URL fragments and trailing slashes', () => {
@@ -37,5 +37,13 @@ describe('analysis primitives', () => {
       { key: 'diversity', value: null },
       { key: 'persistence', value: null },
     ])).toBeNull()
+  })
+
+  it('keeps persistence unavailable until both history and page metadata exist', () => {
+    expect(PERSISTENCE_REQUIREMENTS.minimumPublicHistoryRuns).toBe(1)
+    expect(PERSISTENCE_REQUIREMENTS.bodyHashCalculated).toBe(false)
+    expect(canCalculatePersistence({ hasPreviousRun: false, hasPageFetchMetadata: true })).toBe(false)
+    expect(canCalculatePersistence({ hasPreviousRun: true, hasPageFetchMetadata: false })).toBe(false)
+    expect(canCalculatePersistence({ hasPreviousRun: true, hasPageFetchMetadata: true })).toBe(true)
   })
 })

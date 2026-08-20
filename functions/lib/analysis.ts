@@ -18,6 +18,9 @@ export const calculateWeightedMetricScore = (metrics: Array<{ key: MetricKey; va
   return availableWeight ? Math.round(available.reduce((sum, metric) => sum + (metric.value ?? 0) * METRIC_WEIGHTS[metric.key], 0) / availableWeight) : null
 }
 
+export const PERSISTENCE_REQUIREMENTS = { minimumPublicHistoryRuns: 1, requiresPageFetchMetadata: true, bodyHashCalculated: false } as const
+export const canCalculatePersistence = (input: { hasPreviousRun: boolean; hasPageFetchMetadata: boolean }) => input.hasPreviousRun && input.hasPageFetchMetadata
+
 export const makeSampleResult = (query: string) => {
   const domains = ['example-media.jp', 'news-example.jp', 'media-sample.jp', 'public-example.go.jp', 'review-sample.jp', 'journal-example.org', 'note-sample.jp']
   const titles = [`${query}の基礎と最新動向`, `${query}をめぐるニュースを整理`, `${query}について専門家が解説`, `${query}の公式資料と発表`, `${query}の利用者レビュー`]

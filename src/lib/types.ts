@@ -1,4 +1,5 @@
 export type MetricKey = 'originality' | 'sourceHealth' | 'diversity' | 'persistence'
+export type ObservationRunType = 'scheduled' | 'manual_official' | 'verification'
 
 export type Metric = {
   key: MetricKey
@@ -37,6 +38,8 @@ export type ExperimentResult = {
 export type OfficialOverview = {
   hasObservation: boolean
   latestRunId: string | null
+  runType: Exclude<ObservationRunType, 'verification'> | null
+  isBaseline: boolean
   observedAt: string | null
   score: number | null
   previousScore: number | null
@@ -44,6 +47,7 @@ export type OfficialOverview = {
   analyzedPages: number
   startDate: string | null
   nextObservation: string | null
+  metricCoverage: { available: number; total: number; missing: string[] }
   domains: Array<{ name: string; score: number | null; pages: number; observedAt: string | null }>
 }
 

@@ -33,6 +33,8 @@ export const sampleExperiment: ExperimentResult = {
 export const emptyOfficialOverview: OfficialOverview = {
   hasObservation: false,
   latestRunId: null,
+  runType: null,
+  isBaseline: false,
   observedAt: null,
   score: null,
   previousScore: null,
@@ -40,6 +42,7 @@ export const emptyOfficialOverview: OfficialOverview = {
   analyzedPages: 0,
   startDate: null,
   nextObservation: '定期観測の設定後に表示',
+  metricCoverage: { available: 0, total: 4, missing: ['独自性', '出典健全性', '発見多様性', '持続性'] },
   domains: [
     { name: '医療・健康', score: null, pages: 0, observedAt: null },
     { name: '災害・防災', score: null, pages: 0, observedAt: null },
