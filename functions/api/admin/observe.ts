@@ -1,4 +1,4 @@
-import { analyzeResults, buildSearchRankChanges, calculatePersistenceScore, calculateWeightedMetricScore, canCalculatePersistence, isLikelyPrimary, normalizeUrl } from '../../lib/analysis'
+import { analyzeResults, buildSearchRankChanges, calculatePersistenceScore, calculateWeightedMetricScore, canCalculatePersistence, classifyObservationCoverage, isLikelyPrimary, normalizeUrl } from '../../lib/analysis'
 import { canSpendBrave, recordApiUsage } from '../../lib/budget'
 import { EN_US_PANEL, PUBLIC_PANEL_ID } from '../../lib/panels'
 import { searchWeb } from '../../lib/provider'
@@ -40,7 +40,7 @@ export const onRequestPost = async ({ request, env }: PagesContext) => {
   const persistenceAvailable = canCalculatePersistence({ hasPreviousRun: Boolean(previousPublicRun), hasPageFetchMetadata })
   const earlierHistory = new Set((await env.ENTROPY_DB.prepare('SELECT DISTINCT normalized_url FROM search_rank_history WHERE panel_id = ?1').bind(PUBLIC_PANEL_ID).all<{ normalized_url: string }>()).results.map((row) => row.normalized_url))
 
-  const audits: Array<{ queryId: string; domain: string; query: string; queryType: string; rationale: string; requestedCount: number; returnedCount: number; status: string; score: number | null; top20Score: number | null; metrics: Record<string, number | null>; top10Metrics: Record<string, number | null>; top20Metrics: Record<string, number | null>; missingMetrics: string[]; errorReason: string | null }> = []
+  const audits: Array<{ queryId: string; domain: string; query: string; queryType: string; rationale: string; requestedCount: number; returnedCount: number; status: string; queryObservationStatus: string; top10Coverage: string; extendedTop20Coverage: string; score: number | null; top20Score: number | null; metrics: Record<string, number | null>; top10Metrics: Record<string, number | null>; top20Metrics: Record<string, number | null>; missingMetrics: string[]; errorReason: string | null }> = []
   const pageRows: PageRow[] = []
   const scores: Record<string, number[]> = {}
   const top20Scores: Record<string, number[]> = {}
@@ -64,15 +64,15 @@ export const onRequestPost = async ({ request, env }: PagesContext) => {
         const score = calculateWeightedMetricScore(top10Metrics)
         const top20Score = calculateWeightedMetricScore(top20Metrics)
         const pages: PageRow[] = result.pages.map((page, index) => ({ queryId: item.id, domain: item.domain, query: item.query, rank: index + 1, url: page.url, normalizedUrl: normalizeUrl(page.url), hostname: hostnameOf(page.url), title: page.title, snippet: response.items[index]?.description ?? '', clusterId: page.clusterId, primaryLikelihood: isLikelyPrimary(hostnameOf(page.url)) ? 1 : 0.2 }))
-        const status = result.totalResults === panel.result_count ? 'success' : result.totalResults > 0 ? 'partial' : 'failure'
-        return { item, result, pages, score, top20Score, top10MetricValues, top20MetricValues, status, errorReason: null }
+        const coverage = classifyObservationCoverage({ requestedCount: panel.result_count, returnedCount: result.totalResults })
+        return { item, result, pages, score, top20Score: coverage.extendedTop20Coverage === 'available' ? top20Score : null, top10MetricValues, top20MetricValues, status: coverage.queryObservationStatus, ...coverage, errorReason: null }
       } catch {
-        return { item, result: null, pages: [], score: null, top20Score: null, top10MetricValues: { originality: null, sourceHealth: null, diversity: null, persistence: null }, top20MetricValues: { originality: null, sourceHealth: null, diversity: null, persistence: null }, status: 'failure', errorReason: 'Search provider request failed' }
+        return { item, result: null, pages: [], score: null, top20Score: null, top10MetricValues: { originality: null, sourceHealth: null, diversity: null, persistence: null }, top20MetricValues: { originality: null, sourceHealth: null, diversity: null, persistence: null }, status: 'failed', ...classifyObservationCoverage({ requestedCount: panel.result_count, returnedCount: 0, providerFailed: true }), errorReason: 'Search provider request failed' }
       }
     }))
     for (const item of results) {
       const missingMetrics = Object.entries(item.top10MetricValues).filter(([, value]) => value === null).map(([key]) => key === 'originality' ? 'Uniqueness' : key === 'sourceHealth' ? 'Source Integrity' : key === 'diversity' ? 'Discovery Diversity' : 'Persistence')
-      audits.push({ queryId: item.item.id, domain: item.item.domain, query: item.item.query, queryType: item.item.query_type, rationale: item.item.rationale, requestedCount: panel.result_count, returnedCount: item.result?.totalResults ?? 0, status: item.status, score: item.score, top20Score: item.top20Score, metrics: item.top10MetricValues, top10Metrics: item.top10MetricValues, top20Metrics: item.top20MetricValues, missingMetrics, errorReason: item.errorReason })
+      audits.push({ queryId: item.item.id, domain: item.item.domain, query: item.item.query, queryType: item.item.query_type, rationale: item.item.rationale, requestedCount: panel.result_count, returnedCount: item.result?.totalResults ?? 0, status: item.status, queryObservationStatus: item.queryObservationStatus, top10Coverage: item.top10Coverage, extendedTop20Coverage: item.extendedTop20Coverage, score: item.score, top20Score: item.top20Score, metrics: item.top10MetricValues, top10Metrics: item.top10MetricValues, top20Metrics: item.top20MetricValues, missingMetrics, errorReason: item.errorReason })
       if (item.score !== null) scores[item.item.domain] = [...(scores[item.item.domain] ?? []), item.score]
       if (item.top20Score !== null) top20Scores[item.item.domain] = [...(top20Scores[item.item.domain] ?? []), item.top20Score]
       pageRows.push(...item.pages)
@@ -80,11 +80,12 @@ export const onRequestPost = async ({ request, env }: PagesContext) => {
     }
   }
 
-  const domainScores = Object.entries(scores).map(([domain, values]) => ({ domain, score: Math.round(values.reduce((sum, value) => sum + value, 0) / values.length), top20Score: Math.round((top20Scores[domain] ?? values).reduce((sum, value) => sum + value, 0) / (top20Scores[domain] ?? values).length), pages: audits.filter((audit) => audit.domain === domain).reduce((sum, audit) => sum + audit.returnedCount, 0) }))
+  const domainScores = Object.entries(scores).map(([domain, values]) => { const extended = top20Scores[domain] ?? []; return { domain, score: Math.round(values.reduce((sum, value) => sum + value, 0) / values.length), top20Score: extended.length ? Math.round(extended.reduce((sum, value) => sum + value, 0) / extended.length) : null, pages: audits.filter((audit) => audit.domain === domain).reduce((sum, audit) => sum + audit.returnedCount, 0) } })
   const score = domainScores.length ? Math.round(domainScores.reduce((sum, item) => sum + item.score, 0) / domainScores.length) : null
-  const top20Score = domainScores.length ? Math.round(domainScores.reduce((sum, item) => sum + item.top20Score, 0) / domainScores.length) : null
-  const queryStats = { success: audits.filter((audit) => audit.status === 'success').length, partial: audits.filter((audit) => audit.status === 'partial').length, failure: audits.filter((audit) => audit.status === 'failure').length }
-  const runStatus = queryStats.failure === panel.queries.length ? 'failed' : 'completed'
+  const availableTop20Scores = domainScores.filter((item): item is typeof item & { top20Score: number } => item.top20Score !== null)
+  const top20Score = availableTop20Scores.length ? Math.round(availableTop20Scores.reduce((sum, item) => sum + item.top20Score, 0) / availableTop20Scores.length) : null
+  const queryStats = { complete: audits.filter((audit) => audit.queryObservationStatus === 'complete').length, partial: audits.filter((audit) => audit.queryObservationStatus === 'partial').length, failed: audits.filter((audit) => audit.queryObservationStatus === 'failed').length }
+  const runStatus = queryStats.failed === panel.queries.length ? 'failed' : 'completed'
   await env.ENTROPY_DB.prepare('INSERT INTO observation_runs (id, started_at, observed_at, score, analyzed_pages, calculation_version) VALUES (?1, ?2, ?3, ?4, ?5, ?6)').bind(runId, started, observedAt, score, pageRows.length, panel.methodology_version).run()
   await env.ENTROPY_DB.prepare('INSERT INTO observation_run_types (run_id, run_type, panel_id, classified_at) VALUES (?1, ?2, ?3, ?4)').bind(runId, runType, PUBLIC_PANEL_ID, observedAt).run()
   await env.ENTROPY_DB.prepare('INSERT INTO observation_run_labels (run_id, run_type, labeled_at) VALUES (?1, ?2, ?3)').bind(runId, runType, observedAt).run()

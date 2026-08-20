@@ -12,3 +12,6 @@ export type D1DatabaseLike = { prepare: (query: string) => D1StatementLike; batc
 export type PagesContext = { request: Request; env: RuntimeEnv; params: Record<string, string>; next: () => Promise<Response> }
 
 export type SearchItem = { title: string; url: string; description: string; age?: string }
+export type LiveQualityLevel = 'full_content' | 'mixed_content' | 'snippet_only' | 'insufficient_data'
+export type PrimarySourceConfidence = 'verified_primary_source' | 'likely_primary_source' | 'official_source_candidate' | 'not_primary' | 'unevaluable'
+export type LivePageEvidence = { fullContent: boolean; primaryConfidence: PrimarySourceConfidence; failureReason?: string }
