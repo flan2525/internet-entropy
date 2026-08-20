@@ -115,3 +115,13 @@ npm audit --audit-level=high
 - 本文取得・robots.txtの個別判定・HTTP死活の定期比較はDBの器までをMVPに含め、初回の検索体験では実行しない
 - クラスタリングはタイトル・説明・URLの安価な類似推定であり、意味の同一性を証明しない
 - 公式観測が2回未満の間は、持続性と時系列の解釈ができない
+
+## English long-term panel
+
+The default public series is `en-us-core-v1`: English-language search in the United States, moderate SafeSearch, and up to 20 web results per query. The fixed 50-query registry lives in `config/panels/en-us-core-v1.json`; each query has an ID, category, selection reason, type, active date, and panel version. The previous Japanese series remains under `legacy-ja` and is never used as the English panel's previous observation.
+
+The main score uses Top 10 results. Top 20 is stored and shown as a supporting view so concentration in the most discoverable results can be compared with the search-result fringe. Each category has ten queries: four evergreen, two primary-source, two current-affairs, and two rewrite-heavy.
+
+The monthly Brave budget is capped at 1,000 requests. Official observations use their fixed 50-request allowance; live search has a separate 300-request reserve and stops without inventing measured numbers when the reserve is unavailable. Application usage is recorded in `api_usage_ledger`.
+
+`search_rank_history` records search-result departure separately from direct page status. `url_verification_queue` controls the next check and priority; `url_verification_history` stores HTTP status, final URL, redirect count, content type, title hash, optional body hash, robots result, retry count, and state. A single failure is temporary. Repeated 404/410 becomes disappeared, repeated 5xx/timeout becomes persistent unavailable, and a reachable URL with changed title/body is only a replacement candidate.

@@ -15,7 +15,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "audit": "npm audit --audit-level=high",
-    "observe:official": "node scripts/observe-official.mjs"
+    "observe:official": "node scripts/observe-official.mjs",
+    "verify:urls": "node scripts/verify-urls.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",

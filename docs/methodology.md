@@ -28,3 +28,13 @@ URL、ホスト名、タイトル、説明文を正規化し、共有トーク�
 - [Pew Research Center (2024) — When Online Content Disappears](https://www.pewresearch.org/data-labs/2024/05/17/when-online-content-disappears/)
 
 前者のモデル崩壊と検索結果の重複・風化を同一現象とは断定しない。後者の調査結果を本プロジェクトの現在値へ外挿しない。
+
+## English panel and disappearance rules
+
+The default series is `en-us-core-v1`, using US English search settings and 50 fixed queries. The Japanese observations are retained as `legacy-ja`; they are not used as the previous run, denominator, cumulative page count, or trend for the English panel. Top 10 is the primary score and Top 20 is a supporting comparison.
+
+Search-result departure means that a URL leaves the observed Top 10 or Top 20. It is not called web disappearance. Web status comes only from a direct, SSRF-checked HTTP verification: a first timeout/5xx is `temporarily_unavailable`; repeated failure is `persistent_unavailable`; repeated 404/410 is `disappeared`; a reachable different final URL is `moved`; a reachable page with a changed title or available body hash is `replaced_candidate`; robots or network restrictions are `blocked` or `unverifiable`.
+
+The default verification cadence is: current Top 20 every weekly run, URLs that left the previous Top 20 on the next verification pass, older live URLs monthly, and disappearance candidates for two or three consecutive checks. Redirects are followed manually with a maximum of five hops, and every redirect target is rechecked against the public-URL SSRF policy. The verifier rejects localhost, private/link-local IP literals, metadata hosts, credentials in URLs, unsupported protocols, and unsafe redirect targets.
+
+Persistence becomes calculable only when a previous official run exists and direct page-fetch metadata exists for the previous Top 10 URLs. It combines search retention with the observed web state. Body hashes are recorded only when a bounded HTML/text GET succeeds; they are never inferred. AI-generation classification is out of scope.

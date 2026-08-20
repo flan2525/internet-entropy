@@ -41,7 +41,7 @@ describe('analysis primitives', () => {
 
   it('keeps persistence unavailable until both history and page metadata exist', () => {
     expect(PERSISTENCE_REQUIREMENTS.minimumPublicHistoryRuns).toBe(1)
-    expect(PERSISTENCE_REQUIREMENTS.bodyHashCalculated).toBe(false)
+    expect(PERSISTENCE_REQUIREMENTS.bodyHashCalculated).toBe(true)
     expect(canCalculatePersistence({ hasPreviousRun: false, hasPageFetchMetadata: true })).toBe(false)
     expect(canCalculatePersistence({ hasPreviousRun: true, hasPageFetchMetadata: false })).toBe(false)
     expect(canCalculatePersistence({ hasPreviousRun: true, hasPageFetchMetadata: true })).toBe(true)

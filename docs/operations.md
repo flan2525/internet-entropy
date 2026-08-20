@@ -16,6 +16,8 @@ run種別はscheduleを `scheduled`、運用で明示した公式実行を `manu
 
 Brave Search APIの当該実行のアプリケーション側消費量は、固定クエリ数と `apiRequests` で確認する。アカウント全体の月間残量・請求額はBraveのAPI Dashboardで確認し、APIキー自体はログ・レスポンス・静的配信物へ出さない。
 
+The HTTP verifier never treats a single failure as disappearance. It records `url_verification_history` and updates `url_verification_queue`; `disappearance_events` keeps search departure, web state, evidence, confidence, first observation, and redirect target separate. The public monitor returns `Not enough observation history yet` until a previous official run exists, rather than displaying invented zero counts.
+
 ## キャッシュと保持
 
 ライブ結果は30分のD1キャッシュ。匿名レート制限はCache APIで同一IP・検索語を日次相当で抑える。IPはD1へ保存しない。`live_runs`は必要最小限の期間で削除する。

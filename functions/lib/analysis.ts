@@ -1,15 +1,32 @@
 import type { MetricKey, SearchItem } from './types'
 
-const STOP_WORDS = new Set(['です', 'ます', 'する', 'こと', 'ため', 'から', 'まで', 'について', '情報', '最新', '解説', 'まとめ'])
+const STOP_WORDS = new Set([
+  'the', 'and', 'for', 'with', 'from', 'that', 'this', 'what', 'when', 'where', 'how', 'why', 'about', 'into', 'your', 'best', 'guide', 'news',
+  'です', 'ます', 'する', 'こと', 'ため', 'から', 'まで', 'について', '情報', '最新', '解説', 'まとめ',
+])
 const COLORS = ['#42c7b5', '#e7b75b', '#5794d0', '#a08de0']
 
-const domainOf = (raw: string) => { try { return new URL(raw).hostname.replace(/^www\./, '') } catch { return '取得不能' } }
-const normalize = (value: string) => value.toLowerCase().replace(/[「」『』。、！？,.!?()（）【】]/g, ' ').replaceAll('[', ' ').replaceAll(']', ' ').replace(/\s+/g, ' ').trim()
-const tokens = (value: string) => normalize(value).split(/\s+/).filter((token) => token.length > 1 && !STOP_WORDS.has(token)).slice(0, 18)
+export type AnalysisWindow = {
+  resultCount: number
+  distinctDomains: number
+  lineageCount: number
+  primarySourceReach: number
+  highSimilarityPairs: number
+  metrics: Record<'originality' | 'sourceHealth' | 'diversity', number>
+}
+
+export type RankedPage = { queryId: string; query: string; domain: string; normalizedUrl: string; title: string; rank: number }
+export type SearchChangeStatus = 'still_ranked' | 'rank_changed' | 'dropped_from_top_10' | 'dropped_from_top_20' | 'newly_ranked' | 'returned_to_results'
+export type SearchRankChange = RankedPage & { previousRank: number | null; currentRank: number | null; status: SearchChangeStatus }
+
+const domainOf = (raw: string) => { try { return new URL(raw).hostname.replace(/^www\./, '').toLowerCase() } catch { return 'unavailable' } }
+const normalize = (value: string) => value.toLowerCase().replace(/[「」『』。、！？,.!?()（）【】]/g, ' ').replaceAll('[', ' ').replaceAll(']', ' ').replace(/[^\p{L}\p{N}\s-]/gu, ' ').replace(/\s+/g, ' ').trim()
+const tokens = (value: string) => normalize(value).split(/\s+/).filter((token) => token.length > 1 && !STOP_WORDS.has(token)).slice(0, 24)
 const similarity = (a: string, b: string) => { const left = new Set(tokens(a)); const right = new Set(tokens(b)); const union = new Set([...left, ...right]).size; return union ? [...left].filter((token) => right.has(token)).length / union : 0 }
 
 export const normalizeUrl = (raw: string) => { try { const url = new URL(raw); url.hash = ''; url.hostname = url.hostname.toLowerCase(); if (url.pathname !== '/') url.pathname = url.pathname.replace(/\/+$/, ''); return url.toString() } catch { return raw } }
 export const classifyHttpStatus = (status: number | 'timeout') => status === 'timeout' ? 'timeout' : status >= 200 && status < 300 ? 'ok' : status >= 300 && status < 400 ? 'redirect' : status >= 400 && status < 500 ? 'client_error' : 'server_error'
+export const isLikelyPrimary = (hostname: string) => /\.(gov|mil|edu)$|\.go\.jp$|\.ac\.jp$|(^|\.)gov\.|who\.int$|un\.org$|census\.gov$|nasa\.gov$|nist\.gov$/.test(hostname)
 
 const METRIC_WEIGHTS: Record<MetricKey, number> = { originality: 0.3, sourceHealth: 0.3, diversity: 0.2, persistence: 0.2 }
 export const calculateWeightedMetricScore = (metrics: Array<{ key: MetricKey; value: number | null }>) => {
@@ -18,32 +35,84 @@ export const calculateWeightedMetricScore = (metrics: Array<{ key: MetricKey; va
   return availableWeight ? Math.round(available.reduce((sum, metric) => sum + (metric.value ?? 0) * METRIC_WEIGHTS[metric.key], 0) / availableWeight) : null
 }
 
-export const PERSISTENCE_REQUIREMENTS = { minimumPublicHistoryRuns: 1, requiresPageFetchMetadata: true, bodyHashCalculated: false } as const
+export const PERSISTENCE_REQUIREMENTS = { minimumPublicHistoryRuns: 1, requiresPageFetchMetadata: true, bodyHashCalculated: true } as const
 export const canCalculatePersistence = (input: { hasPreviousRun: boolean; hasPageFetchMetadata: boolean }) => input.hasPreviousRun && input.hasPageFetchMetadata
+export const persistenceWebScore = (status: string) => ({ alive: 100, moved: 85, redirected: 85, replaced_candidate: 60, temporarily_unavailable: 50, persistent_unavailable: 25, disappeared: 0 } as Record<string, number>)[status] ?? null
+export const calculatePersistenceScore = (previousTop10: Array<{ normalizedUrl: string; rank: number }>, currentTop20: Array<{ normalizedUrl: string; rank: number }>, webStates: Map<string, string>) => {
+  const current = new Map(currentTop20.map((page) => [page.normalizedUrl, page.rank]))
+  const values = previousTop10.map((page) => {
+    const rank = current.get(page.normalizedUrl)
+    const searchScore = rank === undefined ? 0 : rank <= 10 ? 100 : 70
+    const webScore = persistenceWebScore(webStates.get(page.normalizedUrl) ?? '')
+    return webScore === null ? null : Math.round((searchScore + webScore) / 2)
+  }).filter((value): value is number => value !== null)
+  return values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : null
+}
 
-export const makeSampleResult = (query: string) => {
-  const domains = ['example-media.jp', 'news-example.jp', 'media-sample.jp', 'public-example.go.jp', 'review-sample.jp', 'journal-example.org', 'note-sample.jp']
-  const titles = [`${query}の基礎と最新動向`, `${query}をめぐるニュースを整理`, `${query}について専門家が解説`, `${query}の公式資料と発表`, `${query}の利用者レビュー`]
-  const clusters = ['a', 'b', 'a', 'c', 'b', 'd', 'a', 'c', 'd', 'b'].map((id, index) => ({ id, index })).reduce<Record<string, number>>((acc, item) => { acc[item.id] = (acc[item.id] ?? 0) + 1; return acc }, {})
+const analyzeWindow = (items: SearchItem[]): AnalysisWindow => {
+  const groups: Array<{ items: SearchItem[]; key: string }> = []
+  for (const item of items) { const matching = groups.find((group) => similarity(`${item.title} ${item.description}`, `${group.items[0].title} ${group.items[0].description}`) >= .22); if (matching) matching.items.push(item); else groups.push({ items: [item], key: String.fromCharCode(97 + groups.length) }) }
+  const domains = items.map((item) => domainOf(item.url))
+  const primarySourceReach = items.filter((item) => isLikelyPrimary(domainOf(item.url))).length
   return {
-    query, source: 'sample' as const, observedAt: new Date().toISOString(), totalResults: 10, distinctDomains: 7, lineageCount: 4, primarySourceReach: 2, highSimilarityPairs: 3, unavailableCount: 1,
-    metrics: [{ key: 'originality', label: '独自性', value: 58, definition: '他ページと重複しない論点や記述の割合を推定します。', sampleSize: 10, unit: '点 / 100' }, { key: 'sourceHealth', label: '出典健全性', value: 64, definition: '一次資料・発行主体・引用元が確認できる度合いを見ます。', sampleSize: 10, unit: '点 / 100' }, { key: 'diversity', label: '発見多様性', value: 71, definition: '異なるドメイン、運営主体、引用元に出会える度合いを見ます。', sampleSize: 10, unit: '点 / 100' }, { key: 'persistence', label: '持続性', value: null, definition: 'URLの生存、移転、内容の変化を継続的に記録します。', sampleSize: 0, unit: '回数不足' }],
-    clusters: Object.entries(clusters).map(([id, resultCount], index) => ({ id, label: `系統${String.fromCharCode(65 + index)}`, resultCount, color: COLORS[index], primarySource: index < 2 ? '資料（推定）' : undefined, confidence: '推定' as const })),
-    pages: titles.map((title, index) => ({ title, domain: domains[index], clusterId: ['a', 'b', 'a', 'c', 'b'][index], sourceType: index === 3 ? '一次資料' : '解説記事', url: `https://${domains[index]}/${encodeURIComponent(query)}` })),
-    note: '検索Providerが未設定のため、保存済み代表観測の形式で表示しています。これはライブ実測値ではありません.',
+    resultCount: items.length,
+    distinctDomains: new Set(domains).size,
+    lineageCount: groups.length,
+    primarySourceReach,
+    highSimilarityPairs: groups.filter((group) => group.items.length > 1).reduce((sum, group) => sum + group.items.length - 1, 0),
+    metrics: { originality: Math.round(100 * groups.length / Math.max(1, items.length)), sourceHealth: Math.round(100 * primarySourceReach / Math.max(1, items.length)), diversity: Math.round(100 * new Set(domains).size / Math.max(1, items.length)) },
   }
 }
 
-export const analyzeResults = (query: string, items: SearchItem[], provider: 'brave' | 'sample') => {
-  const limited = items.slice(0, 10)
+export const analyzeResults = (query: string, items: SearchItem[], provider: 'brave' | 'sample', resultCount = 20) => {
+  const limited = items.slice(0, resultCount)
+  const top10Items = limited.slice(0, 10)
+  const top10 = analyzeWindow(top10Items)
+  const top20 = analyzeWindow(limited)
+  const metrics = { ...top10.metrics, persistence: null as number | null }
+  const label = (key: string) => key === 'originality' ? 'Uniqueness' : key === 'sourceHealth' ? 'Source Integrity' : key === 'diversity' ? 'Discovery Diversity' : 'Persistence'
+  const top10MetricList = Object.entries(metrics).map(([key, value]) => ({ key: key as MetricKey, label: label(key), value, definition: '', sampleSize: top10Items.length, unit: value === null ? 'history required' : 'score / 100' }))
   const groups: Array<{ items: SearchItem[]; key: string }> = []
   for (const item of limited) { const matching = groups.find((group) => similarity(`${item.title} ${item.description}`, `${group.items[0].title} ${group.items[0].description}`) >= .22); if (matching) matching.items.push(item); else groups.push({ items: [item], key: String.fromCharCode(97 + groups.length) }) }
-  const metrics = { originality: Math.round(100 * (groups.length / Math.max(1, limited.length))), sourceHealth: Math.round(100 * limited.filter((item) => /\.go\.jp$|\.ac\.jp$|\.gov\.|who\.int|un\.org/.test(domainOf(item.url))).length / Math.max(1, limited.length)), diversity: Math.round(100 * new Set(limited.map((item) => domainOf(item.url))).size / Math.max(1, limited.length)), persistence: null }
   return {
-    query, source: provider, observedAt: new Date().toISOString(), totalResults: limited.length, distinctDomains: new Set(limited.map((item) => domainOf(item.url))).size, lineageCount: groups.length, primarySourceReach: limited.filter((item) => /\.go\.jp$|\.ac\.jp$|\.gov\.|who\.int|un\.org/.test(domainOf(item.url))).length, highSimilarityPairs: groups.filter((group) => group.items.length > 1).reduce((sum, group) => sum + group.items.length - 1, 0), unavailableCount: 10 - limited.length,
-    metrics: Object.entries(metrics).map(([key, value]) => ({ key, label: key === 'originality' ? '独自性' : key === 'sourceHealth' ? '出典健全性' : key === 'diversity' ? '発見多様性' : '持続性', value, definition: '', sampleSize: limited.length, unit: value === null ? '回数不足' : '点 / 100' })),
-    clusters: groups.map((group, index) => ({ id: group.key, label: `系統${String.fromCharCode(65 + index)}`, resultCount: group.items.length, color: COLORS[index % COLORS.length], primarySource: group.items[0].title, confidence: '推定' as const })),
-    pages: limited.map((item, index) => ({ title: item.title, domain: domainOf(item.url), clusterId: groups.find((group) => group.items.includes(item))?.key ?? 'a', sourceType: index === 0 ? '検索結果' : '関連ページ', url: normalizeUrl(item.url) })),
-    note: '検索結果のタイトル・説明・URLから再現可能な規則で情報系統を推定しています。本文全文は保存しません。',
+    query, source: provider, observedAt: new Date().toISOString(), totalResults: limited.length, distinctDomains: top10.distinctDomains, lineageCount: top10.lineageCount, primarySourceReach: top10.primarySourceReach, highSimilarityPairs: top10.highSimilarityPairs, unavailableCount: Math.max(0, resultCount - limited.length),
+    metrics: top10MetricList,
+    top10: { ...top10, score: calculateWeightedMetricScore(top10MetricList) },
+    top20: { ...top20, score: calculateWeightedMetricScore(Object.entries({ ...top20.metrics, persistence: null as number | null }).map(([key, value]) => ({ key: key as MetricKey, value }))) },
+    clusters: groups.map((group, index) => ({ id: group.key, label: `Lineage ${String.fromCharCode(65 + index)}`, resultCount: group.items.length, color: COLORS[index % COLORS.length], primarySource: group.items[0].title, confidence: 'estimated' as const })),
+    pages: limited.map((item, index) => ({ title: item.title, domain: domainOf(item.url), clusterId: groups.find((group) => group.items.includes(item))?.key ?? 'a', sourceType: index === 0 ? 'search result' : 'related page', url: normalizeUrl(item.url) })),
+    note: 'Estimated from search-result titles, descriptions, and URLs. Page bodies are not republished.',
   }
 }
+
+export const buildSearchRankChanges = (previous: RankedPage[], current: RankedPage[], hadEarlierHistory: Set<string> = new Set()) => {
+  const previousByUrl = new Map(previous.map((page) => [page.normalizedUrl, page]))
+  const currentByUrl = new Map(current.map((page) => [page.normalizedUrl, page]))
+  const changes: SearchRankChange[] = []
+  for (const page of current) {
+    const prior = previousByUrl.get(page.normalizedUrl)
+    let status: SearchChangeStatus
+    if (!prior) status = hadEarlierHistory.has(page.normalizedUrl) ? 'returned_to_results' : 'newly_ranked'
+    else if (prior.rank === page.rank) status = 'still_ranked'
+    else status = 'rank_changed'
+    changes.push({ ...page, previousRank: prior?.rank ?? null, currentRank: page.rank, status })
+  }
+  for (const page of previous) {
+    if (currentByUrl.has(page.normalizedUrl)) continue
+    changes.push({ ...page, previousRank: page.rank, currentRank: null, status: page.rank <= 10 ? 'dropped_from_top_10' : 'dropped_from_top_20' })
+  }
+  return changes
+}
+
+export const makeSampleResult = (query: string) => analyzeResults(query, [
+  { title: `${query} overview`, url: 'https://example.org/overview', description: `${query} explained with background and context` },
+  { title: `${query} guide`, url: 'https://example.com/guide', description: `${query} explained with background and context` },
+  { title: `${query} official information`, url: 'https://www.gov.example/official', description: 'Public source information' },
+  { title: `${query} research`, url: 'https://research.example.edu/paper', description: 'Research and evidence' },
+  { title: `${query} comparison`, url: 'https://review.example.net/comparison', description: `${query} review and comparison` },
+  { title: `${query} explained`, url: 'https://news.example.org/explained', description: `${query} explained with background and context` },
+  { title: `${query} facts`, url: 'https://facts.example.net/facts', description: `${query} facts and summary` },
+  { title: `${query} report`, url: 'https://report.example.com/report', description: `${query} report and summary` },
+  { title: `${query} checklist`, url: 'https://guide.example.org/checklist', description: `${query} checklist` },
+  { title: `${query} data`, url: 'https://data.example.gov/data', description: 'Public data source' },
+], 'sample', 20)
