@@ -1,4 +1,4 @@
-import { analyzeResults, buildSearchRankChanges, calculatePersistenceScore, calculateWeightedMetricScore, canCalculatePersistence, classifyObservationCoverage, isLikelyPrimary, normalizeUrl } from '../../lib/analysis'
+import { analyzeResults, buildSearchRankChanges, calculatePersistenceScore, calculateWeightedMetricScore, canCalculatePersistence, classifyObservationCoverage, isLikelyPrimary, normalizeUrl, selectTop10 } from '../../lib/analysis'
 import { canSpendBrave, recordApiUsage } from '../../lib/budget'
 import { EN_US_PANEL, PUBLIC_PANEL_ID } from '../../lib/panels'
 import { searchWeb } from '../../lib/provider'
@@ -56,11 +56,11 @@ export const onRequestPost = async ({ request, env }: PagesContext) => {
         const response = await searchWeb(item.query, env, { count: panel.result_count, country: panel.country, searchLang: panel.search_lang, safeSearch: panel.safe_search })
         const result = analyzeResults(item.query, response.items, response.provider, panel.result_count)
         const priorForQuery = previousPages.results.filter((page) => page.query_id === item.id || (!page.query_id && page.query === item.query))
-        const persistence = persistenceAvailable ? calculatePersistenceScore(priorForQuery.filter((page) => page.rank <= 10), result.pages.map((page, index) => ({ normalizedUrl: page.url, rank: index + 1 })), webStates) : null
+        const persistence = persistenceAvailable ? calculatePersistenceScore(selectTop10(priorForQuery), selectTop10(result.pages.map((page, index) => ({ normalizedUrl: page.url, rank: index + 1 }))), webStates) : null
         const top10MetricValues = { ...result.top10.metrics, persistence }
-        const top20MetricValues = { ...result.top20.metrics, persistence }
+        const top20MetricValues = result.top20 ? { ...result.top20.metrics, persistence } : { originality: null, sourceHealth: null, diversity: null, persistence }
         const top10Metrics = metricList(top10MetricValues, Math.min(10, result.totalResults))
-        const top20Metrics = metricList(top20MetricValues, result.totalResults)
+        const top20Metrics = metricList(top20MetricValues, result.top20?.resultCount ?? 0)
         const score = calculateWeightedMetricScore(top10Metrics)
         const top20Score = calculateWeightedMetricScore(top20Metrics)
         const pages: PageRow[] = result.pages.map((page, index) => ({ queryId: item.id, domain: item.domain, query: item.query, rank: index + 1, url: page.url, normalizedUrl: normalizeUrl(page.url), hostname: hostnameOf(page.url), title: page.title, snippet: response.items[index]?.description ?? '', clusterId: page.clusterId, primaryLikelihood: isLikelyPrimary(hostnameOf(page.url)) ? 1 : 0.2 }))
@@ -94,8 +94,8 @@ export const onRequestPost = async ({ request, env }: PagesContext) => {
   await runBatches(env.ENTROPY_DB, audits.map((audit) => env.ENTROPY_DB!.prepare('INSERT INTO observation_queries (run_id, domain, query, requested_count, returned_count, status, score, metrics_json, missing_metrics, error_reason, observed_at, query_id, query_type, query_rationale, panel_id, top10_score, top20_score, top10_metrics_json, top20_metrics_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)').bind(runId, audit.domain, audit.query, audit.requestedCount, audit.returnedCount, audit.status, audit.score, JSON.stringify(audit.metrics), audit.missingMetrics.join(', '), audit.errorReason, observedAt, audit.queryId, audit.queryType, audit.rationale, PUBLIC_PANEL_ID, audit.score, audit.top20Score, JSON.stringify(audit.top10Metrics), JSON.stringify(audit.top20Metrics))))
   await runBatches(env.ENTROPY_DB, pageRows.map((page) => env.ENTROPY_DB!.prepare('INSERT INTO observation_pages (run_id, domain, query, rank, url, normalized_url, hostname, title, snippet, cluster_id, primary_likelihood, observed_at, query_id, panel_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)').bind(runId, page.domain, page.query, page.rank, page.url, page.normalizedUrl, page.hostname, page.title, page.snippet, page.clusterId, page.primaryLikelihood, observedAt, page.queryId, PUBLIC_PANEL_ID)))
 
-  const currentRanked = pageRows.map((page) => ({ queryId: page.queryId, query: page.query, domain: page.domain, normalizedUrl: page.normalizedUrl, title: page.title, rank: page.rank }))
-  const previousRanked = previousPages.results.map((page) => ({ queryId: page.query_id ?? '', query: page.query, domain: page.domain, normalizedUrl: page.normalized_url, title: page.title ?? '', rank: page.rank }))
+  const currentRanked = selectTop10(pageRows.map((page) => ({ queryId: page.queryId, query: page.query, domain: page.domain, normalizedUrl: page.normalizedUrl, title: page.title, rank: page.rank })))
+  const previousRanked = selectTop10(previousPages.results.map((page) => ({ queryId: page.query_id ?? '', query: page.query, domain: page.domain, normalizedUrl: page.normalized_url, title: page.title ?? '', rank: page.rank })))
   const previousByQuery = new Map<string, typeof previousRanked>()
   for (const page of previousRanked) previousByQuery.set(page.queryId || page.query, [...(previousByQuery.get(page.queryId || page.query) ?? []), page])
   const currentByQuery = new Map<string, typeof currentRanked>()

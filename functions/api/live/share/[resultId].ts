@@ -10,5 +10,6 @@ export const onRequestGet = async ({ env, params }: PagesContext) => {
   if (Date.parse(row.expires_at) <= Date.now()) return json({ error: 'expired', expired: true, expiresAt: row.expires_at }, 410, { 'X-Robots-Tag': 'noindex, nofollow', 'Cache-Control': 'no-store' })
   let result: unknown
   try { result = JSON.parse(row.result_json) } catch { return json({ error: 'not found' }, 404, { 'X-Robots-Tag': 'noindex, nofollow' }) }
+  if (result && typeof result === 'object' && 'totalResults' in result && typeof result.totalResults === 'number' && (result.totalResults > 10 || (typeof result.searchResultsRetrieved === 'number' && result.searchResultsRetrieved > 10))) return json({ error: 'snapshot predates the Top 10 live-analysis policy' }, 410, { 'X-Robots-Tag': 'noindex, nofollow', 'Cache-Control': 'no-store' })
   return json({ resultId: row.result_id, result, expiresAt: row.expires_at, methodologyVersion: row.methodology_version, observedAt: row.observed_at, shared: true }, 200, { 'X-Robots-Tag': 'noindex, nofollow', 'Cache-Control': 'public, max-age=300' })
 }

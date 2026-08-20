@@ -23,6 +23,7 @@ export type ExperimentResult = {
   clusters: LineageCluster[]
   pages: Array<{ title: string; domain: string; clusterId: string; sourceType: string; url: string }>
   note: string
+  providerResultsRetrieved: number
   searchResultsRetrieved: number
   fullPagesRetrieved: number
   fullPagesUnavailable: number

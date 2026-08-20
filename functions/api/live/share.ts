@@ -17,6 +17,13 @@ export const onRequestPost = async ({ request, env }: PagesContext) => {
   if (!body.result || typeof body.result !== 'object') return json({ error: 'result is required' }, 400)
   const result = body.result as Record<string, unknown>
   if (typeof result.query !== 'string' || result.query.length < 2 || typeof result.totalResults !== 'number' || result.totalResults < 1) return json({ error: 'a measured result is required' }, 400)
+  const pages = Array.isArray(result.pages) ? result.pages : []
+  const clusters = Array.isArray(result.clusters) ? result.clusters : []
+  const searchResultsRetrieved = typeof result.searchResultsRetrieved === 'number' ? result.searchResultsRetrieved : result.totalResults
+  const fullPagesRetrieved = typeof result.fullPagesRetrieved === 'number' ? result.fullPagesRetrieved : 0
+  const fullPagesUnavailable = typeof result.fullPagesUnavailable === 'number' ? result.fullPagesUnavailable : 0
+  const clusterResultCount = clusters.reduce((sum, cluster) => sum + (typeof cluster === 'object' && cluster && typeof (cluster as { resultCount?: unknown }).resultCount === 'number' ? (cluster as { resultCount: number }).resultCount : 0), 0)
+  if (result.totalResults > 10 || searchResultsRetrieved > 10 || pages.length > 10 || result.top20 !== null || fullPagesRetrieved + fullPagesUnavailable !== searchResultsRetrieved || clusterResultCount > searchResultsRetrieved) return json({ error: 'only a consistent Top 10 live result can be shared' }, 422)
   const resultJson = JSON.stringify(result)
   if (new TextEncoder().encode(resultJson).byteLength > MAX_SNAPSHOT_BYTES) return json({ error: 'result is too large to share' }, 413)
   await env.ENTROPY_DB.prepare("DELETE FROM live_share_snapshots WHERE expires_at <= datetime('now')").run()

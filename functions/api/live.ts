@@ -8,6 +8,11 @@ import { json } from '../lib/validation'
 
 const locales: Record<string, { country: string; searchLang: string }> = { en: { country: 'US', searchLang: 'en' }, 'zh-CN': { country: 'CN', searchLang: 'zh-hans' }, ja: { country: 'JP', searchLang: 'ja' }, de: { country: 'DE', searchLang: 'de' }, ru: { country: 'RU', searchLang: 'ru' } }
 const cacheTtl = (query: string) => EN_US_PANEL.queries.find((item) => item.query.toLowerCase() === query.toLowerCase())?.query_type === 'current_affairs' ? 3600 : 86400
+const isTop10LiveResult = (value: unknown): value is { totalResults: number; searchResultsRetrieved: number; fullPagesRetrieved: number; fullPagesUnavailable: number; pages: unknown[]; clusters: unknown[]; top20: null } => {
+  if (!value || typeof value !== 'object') return false
+  const result = value as Record<string, unknown>
+  return result.top20 === null && typeof result.totalResults === 'number' && result.totalResults <= 10 && typeof result.searchResultsRetrieved === 'number' && result.searchResultsRetrieved <= 10 && typeof result.fullPagesRetrieved === 'number' && typeof result.fullPagesUnavailable === 'number' && result.fullPagesRetrieved + result.fullPagesUnavailable === result.searchResultsRetrieved && Array.isArray(result.pages) && result.pages.length <= 10 && Array.isArray(result.clusters)
+}
 const emptyResult = (query: string, note: string) => ({ query, source: 'sample' as const, observedAt: new Date().toISOString(), totalResults: 0, distinctDomains: 0, lineageCount: 0, primarySourceReach: 0, highSimilarityPairs: 0, unavailableCount: 0, metrics: [], top10: null, top20: null, clusters: [], pages: [], note, searchResultsRetrieved: 0, fullPagesRetrieved: 0, fullPagesUnavailable: 0, snippetOnlyResults: 0, fullContentResults: 0, primarySourceEvaluableResults: 0, primarySourceUnevaluableResults: 0, qualityLevel: 'insufficient_data' as const, primarySourceAssessment: 'not_evaluable' as const, similarityGroupCount: 0, similarityGroupResultCount: 0, independentResultCount: 0, analysisBasis: 'search_snippets' as const, primarySourceCandidates: [], fetchFailureReasons: {}, limitations: [note] })
 
 const fetchPageEvidence = async (query: string, items: SearchItem[]) => {
@@ -55,15 +60,21 @@ export const onRequestGet = async ({ request, env }: PagesContext) => {
   const ttl = cacheTtl(query)
   const officialItems = locale === 'en' ? await latestOfficialItems(env, query) : null
   if (officialItems) {
-    const result = analyzeResults(query, officialItems, 'brave', 20, new Map())
+    const liveResults = officialItems.slice(0, 10)
+    const result = { ...analyzeResults(query, liveResults, 'brave', liveResults.length, new Map(), false), providerResultsRetrieved: officialItems.length }
     const officialResult = { ...result, source: 'official' as const, note: 'Reusing the latest official US English observation for this query. This live interaction does not add to the observation series.' }
     if (env.ENTROPY_DB) { await recordApiUsage(env.ENTROPY_DB, { panelId: PUBLIC_PANEL_ID, purpose: 'live', cacheHits: 1 }); await recordLiveUsage(env.ENTROPY_DB, { started: 1, completed: 1, failed: 0, cacheHits: 1, apiRequests: 0, shared: 0, language: locale }) }
     return json(officialResult, 200, { 'Cache-Control': `public, max-age=${Math.min(21600, ttl)}` })
   }
   const cached = env.ENTROPY_DB ? await env.ENTROPY_DB.prepare('SELECT result_json FROM live_runs WHERE query = ?1 AND search_lang = ?2 AND country = ?3 AND created_at > datetime(\'now\', ?4) ORDER BY created_at DESC LIMIT 1').bind(query, setting.searchLang, setting.country, `-${ttl} seconds`).first<{ result_json: string }>() : null
   if (cached?.result_json) {
-    if (env.ENTROPY_DB) { await recordApiUsage(env.ENTROPY_DB, { panelId: null, purpose: 'live', cacheHits: 1 }); await recordLiveUsage(env.ENTROPY_DB, { started: 1, completed: 1, failed: 0, cacheHits: 1, apiRequests: 0, shared: 0, language: locale }) }
-    return json(JSON.parse(cached.result_json), 200, { 'Cache-Control': `public, max-age=${ttl}` })
+    try {
+      const cachedResult = JSON.parse(cached.result_json)
+      if (isTop10LiveResult(cachedResult)) {
+        if (env.ENTROPY_DB) { await recordApiUsage(env.ENTROPY_DB, { panelId: null, purpose: 'live', cacheHits: 1 }); await recordLiveUsage(env.ENTROPY_DB, { started: 1, completed: 1, failed: 0, cacheHits: 1, apiRequests: 0, shared: 0, language: locale }) }
+        return json(cachedResult, 200, { 'Cache-Control': `public, max-age=${ttl}` })
+      }
+    } catch { /* Ignore legacy or malformed cache entries and make a fresh bounded search. */ }
   }
   const budget = env.ENTROPY_DB ? await canSpendBrave(env.ENTROPY_DB, 1, 'live') : { allowed: true, usage: { requests: 0 }, limit: 700 }
   if (!budget.allowed) {
@@ -72,8 +83,9 @@ export const onRequestGet = async ({ request, env }: PagesContext) => {
   }
   try {
     const response = await searchWeb(query, env, { count: 20, country: setting.country, searchLang: setting.searchLang, safeSearch: 'moderate' })
-    const evidence = await fetchPageEvidence(query, response.items.slice(0, 10))
-    const result = analyzeResults(query, response.items, 'brave', 20, evidence)
+    const liveResults = response.items.slice(0, 10)
+    const evidence = await fetchPageEvidence(query, liveResults)
+    const result = { ...analyzeResults(query, liveResults, 'brave', liveResults.length, evidence, false), providerResultsRetrieved: response.responseResultCount }
     if (env.ENTROPY_DB) {
       await env.ENTROPY_DB.prepare('INSERT INTO live_runs (query, source, result_json, created_at, search_lang, country, cache_ttl_seconds) VALUES (?1, ?2, ?3, datetime(\'now\'), ?4, ?5, ?6)').bind(query, result.source, JSON.stringify(result), setting.searchLang, setting.country, ttl).run()
       await recordApiUsage(env.ENTROPY_DB, { panelId: null, purpose: 'live', apiRequests: 1 })

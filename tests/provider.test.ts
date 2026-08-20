@@ -21,4 +21,12 @@ describe('Brave provider request contract', () => {
     expect(response.items).toHaveLength(15)
     expect(logSpy).not.toHaveBeenCalled()
   })
+
+  it('preserves a full 20-result provider response for official observation', async () => {
+    const results = Array.from({ length: 20 }, (_, index) => ({ title: `Result ${index + 1}`, url: `https://example.com/full/${index + 1}`, description: '' }))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ web: { results } }), { status: 200 }))
+    const response = await searchWeb('official top 20', env, { count: 20 })
+    expect(response.responseResultCount).toBe(20)
+    expect(response.items).toHaveLength(20)
+  })
 })

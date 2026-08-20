@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { analyzeResults, calculateWeightedMetricScore, canCalculatePersistence, classifyHttpStatus, classifyObservationCoverage, normalizeUrl, PERSISTENCE_REQUIREMENTS } from '../functions/lib/analysis'
+import { analyzeResults, buildSearchRankChanges, calculateWeightedMetricScore, canCalculatePersistence, classifyHttpStatus, classifyObservationCoverage, normalizeUrl, PERSISTENCE_REQUIREMENTS, selectTop10 } from '../functions/lib/analysis'
 
 describe('analysis primitives', () => {
   it('normalizes URL fragments and trailing slashes', () => {
@@ -69,5 +69,27 @@ describe('analysis primitives', () => {
     const full = analyzeResults('Google Gemini', items, 'brave', 20, new Map(items.map((item) => [item.url, { fullContent: true, primaryConfidence: 'likely_primary_source' as const }])))
     expect(full.qualityLevel).toBe('full_content')
     expect(full.primarySourceAssessment).toBe('evaluable')
+  })
+
+  it('limits live analysis to Top 10 while official analysis can retain Top 20', () => {
+    const items = Array.from({ length: 20 }, (_, index) => ({ title: `Result ${index + 1}`, url: `https://example.com/${index + 1}`, description: `Description ${index + 1}` }))
+    const evidence = new Map(items.slice(0, 10).map((item, index) => [item.url, { fullContent: index < 4, primaryConfidence: 'unevaluable' as const }]))
+    const liveItems = items.slice(0, 10)
+    const live = analyzeResults('Top 10 test', liveItems, 'brave', liveItems.length, evidence, false)
+    expect(live.totalResults).toBe(10)
+    expect(live.searchResultsRetrieved).toBe(10)
+    expect(live.fullPagesRetrieved + live.fullPagesUnavailable).toBe(live.searchResultsRetrieved)
+    expect(live.lineageCount).toBeLessThanOrEqual(live.searchResultsRetrieved)
+    expect(live.clusters.reduce((sum, cluster) => sum + cluster.resultCount, 0)).toBeLessThanOrEqual(10)
+    expect(live.top20).toBeNull()
+    const official = analyzeResults('Top 20 test', items, 'brave', 20)
+    expect(official.totalResults).toBe(20)
+    expect(official.top20?.resultCount).toBe(20)
+  })
+
+  it('keeps rank comparisons and persistence in the common Top 10 range', () => {
+    const previous = [{ rank: 11, normalizedUrl: 'https://example.com/old' }]
+    expect(selectTop10(previous)).toEqual([])
+    expect(buildSearchRankChanges([], selectTop10([{ queryId: 'q', query: 'q', domain: 'example.com', normalizedUrl: 'https://example.com/new', title: 'new', rank: 11 }]))).toEqual([])
   })
 })

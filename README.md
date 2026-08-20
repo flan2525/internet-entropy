@@ -88,14 +88,14 @@ npm audit --audit-level=high
 3. `npx wrangler d1 create internet-entropy-db`でD1を作り、返却されたdatabase_idを本番設定へ登録する
 4. `npx wrangler d1 migrations apply internet-entropy-db --remote`でmigrationを適用する
 5. Pages Settings > Functions > D1 bindingでbinding名 `ENTROPY_DB` を接続する
-6. PagesのSecretに `BRAVE_SEARCH_API_KEY` と `OBSERVATION_CRON_SECRET`を登録する。値はチャットやGitへ貼らない
+6. PagesのSecretに `BRAVE_SEARCH_API_KEY` と `OBSERVATION_CRON_SECRET`を登録する。Brave APIキーはCloudflare Pagesだけに置き、GitHubへ複製しない。値はチャットやGitへ貼らない
 7. `npx wrangler pages deploy dist --project-name internet-entropy`で公開する
 
 `wrangler.jsonc`はPagesのビルド出力と公開非機密変数だけを管理する。DB IDやSecretは認証後にCloudflare側へ設定する。
 
 ## 定期観測
 
-`.github/workflows/official-observation.yml`が毎週月曜02:17 UTCに `/api/admin/observe`を呼ぶ。GitHub Actions Secretとして `OBSERVATION_CRON_SECRET`を登録する。手動実行はworkflow_dispatchから行う。
+`.github/workflows/official-observation.yml`が毎週月曜02:17 UTCに `/api/admin/observe`を呼ぶ。GitHub Actions Secretとして登録するのは `OBSERVATION_CRON_SECRET`だけで、Brave APIキーは登録しない。手動実行はworkflow_dispatchから行う。`.github/workflows/brave-diagnostic.yml`は同じCron Secretで保護されたPages `/api/admin/diagnose` を呼び、Pages側のBrave Secretで1検索語を診断する。
 
 ## ライブ実験の制限
 

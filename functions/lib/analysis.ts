@@ -22,6 +22,8 @@ export type QueryObservationStatus = 'complete' | 'partial' | 'failed'
 export type Top10Coverage = 'complete' | 'partial' | 'unavailable'
 export type ExtendedTop20Coverage = 'available' | 'partial' | 'unavailable'
 
+export const selectTop10 = <T extends { rank: number }>(pages: T[]) => pages.filter((page) => page.rank <= 10)
+
 export const classifyObservationCoverage = (input: { requestedCount: number; returnedCount: number; providerFailed?: boolean }) => {
   const top10Target = Math.min(10, Math.max(1, input.requestedCount))
   const queryObservationStatus: QueryObservationStatus = input.providerFailed || input.returnedCount === 0 ? 'failed' : input.returnedCount >= top10Target ? 'complete' : 'partial'
@@ -85,11 +87,11 @@ const analyzeWindow = (items: SearchItem[]): AnalysisWindow => {
   }
 }
 
-export const analyzeResults = (query: string, items: SearchItem[], provider: 'brave' | 'sample', resultCount = 20, pageEvidence?: Map<string, LivePageEvidence>) => {
+export const analyzeResults = (query: string, items: SearchItem[], provider: 'brave' | 'sample', resultCount = 20, pageEvidence?: Map<string, LivePageEvidence>, includeExtended = true) => {
   const limited = items.slice(0, resultCount)
   const top10Items = limited.slice(0, 10)
   const top10 = analyzeWindow(top10Items)
-  const top20 = analyzeWindow(limited)
+  const top20 = includeExtended ? analyzeWindow(limited) : null
   const metrics = { ...top10.metrics, persistence: null as number | null }
   const label = (key: string) => key === 'originality' ? 'Uniqueness' : key === 'sourceHealth' ? 'Source Integrity' : key === 'diversity' ? 'Discovery Diversity' : 'Persistence'
   const top10MetricList = Object.entries(metrics).map(([key, value]) => ({ key: key as MetricKey, label: label(key), value, definition: '', sampleSize: top10Items.length, unit: value === null ? 'history required' : 'score / 100' }))
@@ -112,7 +114,8 @@ export const analyzeResults = (query: string, items: SearchItem[], provider: 'br
     query, source: provider, observedAt: new Date().toISOString(), totalResults: limited.length, distinctDomains: top10.distinctDomains, lineageCount: top10.lineageCount, primarySourceReach: top10.primarySourceReach, highSimilarityPairs: top10.highSimilarityPairs, unavailableCount: Math.max(0, resultCount - limited.length),
     metrics: top10MetricList,
     top10: { ...top10, score: calculateWeightedMetricScore(top10MetricList) },
-    top20: { ...top20, score: calculateWeightedMetricScore(Object.entries({ ...top20.metrics, persistence: null as number | null }).map(([key, value]) => ({ key: key as MetricKey, value }))) },
+    top20: top20 ? { ...top20, score: calculateWeightedMetricScore(Object.entries({ ...top20.metrics, persistence: null as number | null }).map(([key, value]) => ({ key: key as MetricKey, value }))) } : null,
+    providerResultsRetrieved: limited.length,
     clusters: groups.map((group, index) => ({ id: group.key, label: `Lineage ${String.fromCharCode(65 + index)}`, resultCount: group.items.length, color: COLORS[index % COLORS.length], primarySource: group.items[0].title, confidence: 'estimated' as const })),
     pages: limited.map((item, index) => ({ title: item.title, domain: domainOf(item.url), clusterId: groups.find((group) => group.items.includes(item))?.key ?? 'a', sourceType: index === 0 ? 'search result' : 'related page', url: normalizeUrl(item.url) })),
     note: qualityLevel === 'snippet_only' ? 'Provisional analysis based on search-result titles, descriptions, and URLs. Page bodies were not retrieved.' : 'Analysis uses retrieved page metadata without republishing page bodies.',

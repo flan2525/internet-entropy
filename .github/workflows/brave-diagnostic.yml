@@ -6,6 +6,8 @@ on:
 jobs:
   diagnose:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -13,5 +15,6 @@ jobs:
           node-version-file: .nvmrc
       - name: Inspect one Brave response
         env:
-          BRAVE_SEARCH_API_KEY: ${{ secrets.BRAVE_SEARCH_API_KEY }}
+          PUBLIC_APP_URL: https://internet-entropy.pages.dev
+          OBSERVATION_CRON_SECRET: ${{ secrets.OBSERVATION_CRON_SECRET }}
         run: node scripts/diagnose-brave.mjs
