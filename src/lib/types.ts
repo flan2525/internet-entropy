@@ -46,10 +46,16 @@ export type OfficialOverview = {
   startDate: string | null
   nextObservation: string | null
   metricCoverage: { available: number; total: number; missing: string[] }
+  queriesObserved: number
+  resultsCollected: number
+  uniqueNormalizedUrls: number
+  duplicateNormalizedUrls: number
+  top20Available: number
+  statusCounts: { success: number; partial: number; failure: number }
   domains: Array<{ name: string; score: number | null; top20Score: number | null; pages: number; observedAt: string | null }>
   monitor: DisappearanceMonitor
 }
 export type OfficialQueryAudit = {
   domain: string; query: string; query_id?: string | null; query_type?: string | null; query_rationale?: string | null; requested_count: number; returned_count: number; status: 'success' | 'partial' | 'failure'; score: number | null; top20_score: number | null; metrics: Record<string, number | null>; top10Metrics: Record<string, number | null>; top20Metrics: Record<string, number | null>; missingMetrics: string[]; error_reason: string | null; clusters: Array<{ clusterId: string; pages: number; hostnames: string[] }>
 }
-export type OfficialAudit = { hasObservation: boolean; panelId?: string; runId?: string; runType?: string; observedAt?: string; score?: number | null; top20Score?: number | null; analyzedPages?: number; calculationVersion?: string; methodologyVersion?: string; duplicateNormalizedUrls?: number; queries: OfficialQueryAudit[] }
+export type OfficialAudit = { hasObservation: boolean; panelId?: string; runId?: string; runType?: string; observedAt?: string; score?: number | null; top20Score?: number | null; analyzedPages?: number; calculationVersion?: string; methodologyVersion?: string; queriesObserved?: number; resultsCollected?: number; uniqueNormalizedUrls?: number; duplicateNormalizedUrls?: number; top20Available?: number; statusCounts?: { success: number; partial: number; failure: number }; queries: OfficialQueryAudit[] }
