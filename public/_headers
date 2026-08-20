@@ -1,0 +1,5 @@
+/live/*
+  X-Robots-Tag: noindex, nofollow
+
+/*/live/*
+  X-Robots-Tag: noindex, nofollow
