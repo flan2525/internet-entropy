@@ -14,9 +14,9 @@ const safe = {
   top10Count: payload?.top10Count,
   top20Availability: payload?.top20Availability,
   paginationRequested: payload?.paginationRequested,
-  responseBodyLogged: payload?.responseBodyLogged === false,
-  apiKeyLogged: payload?.apiKeyLogged === false,
-  cronSecretLogged: payload?.cronSecretLogged === false,
+  responseBodyLogged: payload?.responseBodyLogged,
+  apiKeyLogged: payload?.apiKeyLogged,
+  cronSecretLogged: payload?.cronSecretLogged,
 }
 console.log(JSON.stringify(safe, null, 2))
 if (!response.ok || !safe.ok) process.exit(1)
