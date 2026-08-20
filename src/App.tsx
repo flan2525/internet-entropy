@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { emptyOfficialOverview, sampleExperiment } from './lib/sample'
-import type { ExperimentResult, OfficialOverview } from './lib/types'
+import type { ExperimentResult, OfficialAudit, OfficialOverview } from './lib/types'
 
 const stages = ['検索結果を取得', 'ページ情報を確認', '共通出典を探索', '類似グループを作成', '結果を集計']
 
@@ -48,16 +48,26 @@ function MetricVisual({ type }: { type: string }) {
   return <svg className="metric-visual" viewBox="0 0 180 96" aria-hidden="true"><path d="M17 48h142" className="metric-path dim" /><circle cx="36" cy="48" r="8" className="clock-dot teal-fill" /><circle cx="78" cy="48" r="8" className="clock-dot teal-fill" /><circle cx="120" cy="48" r="8" className="clock-dot amber-fill" /><circle cx="158" cy="48" r="8" className="clock-dot dim-fill" /><path d="M36 28v-8M78 28v-8M120 28v-8M158 28v-8" className="metric-path dim" /></svg>
 }
 
+function OfficialAuditPanel({ audit }: { audit: OfficialAudit }) {
+  if (!audit.hasObservation) return null
+  const success = audit.queries.filter((item) => item.status === 'success').length
+  const partial = audit.queries.filter((item) => item.status === 'partial').length
+  const failure = audit.queries.filter((item) => item.status === 'failure').length
+  return <div className="audit-panel" aria-labelledby="audit-title"><div className="audit-header"><div><p className="eyebrow">OBSERVATION AUDIT / {audit.runId?.slice(0, 8)}</p><h3 id="audit-title">初回観測の内訳</h3></div><div className="audit-summary"><span className="audit-success">成功 {success}</span><span className="audit-partial">部分成功 {partial}</span><span className="audit-failure">失敗 {failure}</span><span>正規化URL重複 {audit.duplicateNormalizedUrls ?? 0}</span></div></div><div className="audit-table-wrap"><table className="audit-table"><caption className="sr-only">公式観測のクエリ別監査結果</caption><thead><tr><th>分野 / 検索語</th><th>取得</th><th>値</th><th>欠損</th><th>推定クラスタ / ホスト</th></tr></thead><tbody>{audit.queries.map((item) => <tr key={`${item.domain}-${item.query}`}><td><strong>{item.domain}</strong><span>{item.query}</span></td><td><span className={`audit-status ${item.status}`}>{item.status === 'success' ? '成功' : item.status === 'partial' ? '部分' : '失敗'}</span> {item.returned_count}/{item.requested_count}件</td><td>{item.score ?? '—'}<small>{item.score !== null ? '/100' : ''}</small></td><td>{item.missingMetrics.length ? item.missingMetrics.join('、') : 'なし'}</td><td>{item.clusters.length ? item.clusters.map((cluster) => <span className="cluster-audit" key={cluster.clusterId}>{cluster.clusterId} {cluster.pages}件 <small>{cluster.hostnames.join(', ')}</small></span>) : '—'}</td></tr>)}</tbody></table></div><p className="audit-footnote"><Icon name="info" size={15} /> スコアは取得できた指標だけで再配分。初回は持続性を欠損扱いにする。クラスタはタイトル・説明文・URLの共有トークン類似度による推定、一次情報らしさは公的・教育・国際機関ドメインのヒューリスティックです。取得不能ページは取得件数と部分成功へ反映し、0点には置き換えません。</p></div>
+}
+
 function App() {
   const [query, setQuery] = useState('')
   const [result, setResult] = useState<ExperimentResult>(sampleExperiment)
   const [official, setOfficial] = useState<OfficialOverview>(emptyOfficialOverview)
+  const [audit, setAudit] = useState<OfficialAudit>({ hasObservation: false, queries: [] })
   const [status, setStatus] = useState<'idle' | 'running' | 'done' | 'fallback'>('idle')
   const [errorMessage, setErrorMessage] = useState('')
   const [shareMessage, setShareMessage] = useState('')
 
   useEffect(() => {
     fetch('/api/observations').then(async (response) => response.ok ? setOfficial(await response.json() as OfficialOverview) : undefined).catch(() => undefined)
+    fetch('/api/observations/latest').then(async (response) => response.ok ? setAudit(await response.json() as OfficialAudit) : undefined).catch(() => undefined)
   }, [])
 
   const runExperiment = async (event: FormEvent) => {
@@ -105,6 +115,7 @@ function App() {
       <section className="domain-section" id="domains" aria-labelledby="domain-title"><div className="domain-copy"><p className="eyebrow">03 / FIXED OBSERVATION</p><h2 id="domain-title">分野別の比較</h2><p>同じ観測方法で、5分野の変化を並べて見る。ここに表示される値は、公式定点観測が蓄積してから更新される。</p><a href="#method" className="text-button">計算方法を見る <Icon name="arrow" size={16} /></a></div><div className="domain-chart">{official.domains.map((domain, index) => <div className="domain-row" key={domain.name}><span className="domain-index">0{index + 1}</span><span className="domain-name">{domain.name}</span><div className="bar-track"><div className="bar-value" style={{ width: `${domain.score ?? 0}%` }} /></div><strong>{domain.score ?? '—'}{domain.score !== null && <small>/100</small>}</strong></div>)}</div></section>
 
       <section className="sources-section" id="sources" aria-labelledby="sources-title"><div className="sources-header"><p className="eyebrow">04 / INFORMATION LINEAGE</p><h2 id="sources-title">情報のつながりを、推定する。</h2><p>検索結果をページの列ではなく、共通する一次資料や引用表現のつながりとして見る。断定できない関係には「推定」と表示する。</p></div><div className="lineage-explain"><div className="explain-node"><span className="node-icon"><Icon name="source" size={24} /></span><strong>一次情報の出典</strong><small>公的資料・発表資料</small></div><span className="explain-arrow">→</span><div className="explain-node"><span className="node-icon"><Icon name="link" size={24} /></span><strong>関連するページ群</strong><small>報道・解説・投稿</small></div><span className="explain-arrow">→</span><div className="explain-node"><span className="node-icon"><Icon name="grid" size={24} /></span><strong>派生した要約・引用</strong><small>まとめ・言及</small></div></div></section>
+      <OfficialAuditPanel audit={audit} />
     </main>
     <footer className="site-footer"><div><a href="#top" className="brand">INTERNET <span>ENTROPY</span></a><p>情報の健やかさを、公開のデータで見つめる。</p></div><div className="footer-links"><a href="#method">方法論</a><a href="#sources">データソース</a><a href="#official">観測結果</a><a href="#top">限界と注意事項</a></div><div className="footer-note">観測Web健全度は、明示した観測範囲における指標です。<br />インターネット全体の測定値ではありません。</div></footer>
   </div>

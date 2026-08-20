@@ -32,6 +32,7 @@ export const sampleExperiment: ExperimentResult = {
 
 export const emptyOfficialOverview: OfficialOverview = {
   hasObservation: false,
+  latestRunId: null,
   observedAt: null,
   score: null,
   previousScore: null,

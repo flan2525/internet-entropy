@@ -39,7 +39,10 @@ Google Trends APIは2026年時点でalphaの早期アクセス申請制のため
 - `observation_runs`: 公式観測ジョブ、総合値、計算バージョン
 - `observation_domain_scores`: 分野別の観測値
 - `observation_pages`: 順位、URL、ドメイン、タイトル、HTTP結果、ハッシュ参照、クラスタ
+- `observation_queries`: クエリ別の取得件数、成否、指標値、欠損理由
 - `live_runs`: ライブ実験の短期キャッシュ。ユーザー検索語は長期保存しない方針で、運用時に定期削除する
+
+公式観測の説明可能性は `/api/observations/latest` で確認できる。クエリ別に取得件数、成否、欠損指標、推定クラスタ、ホスト名を返し、画面下部の「初回観測の内訳」に表示する。初回は検索結果APIのメタデータを対象にし、ページ本文を再取得しないため、HTTPステータス・本文ハッシュ・持続性は未計算として扱う。
 
 D1の無料枠は公式料金ページの記載に従って確認する。2026年4月更新の公式ページでは、Free planに1日あたりrows read 5 million、rows written 100,000、合計5GBのストレージが含まれる。利用状況はCloudflare dashboardで確認する。
 

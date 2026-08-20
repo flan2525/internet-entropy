@@ -36,6 +36,7 @@ export type ExperimentResult = {
 
 export type OfficialOverview = {
   hasObservation: boolean
+  latestRunId: string | null
   observedAt: string | null
   score: number | null
   previousScore: number | null
@@ -44,4 +45,27 @@ export type OfficialOverview = {
   startDate: string | null
   nextObservation: string | null
   domains: Array<{ name: string; score: number | null; pages: number; observedAt: string | null }>
+}
+
+export type OfficialQueryAudit = {
+  domain: string
+  query: string
+  requested_count: number
+  returned_count: number
+  status: 'success' | 'partial' | 'failure'
+  score: number | null
+  missingMetrics: string[]
+  error_reason: string | null
+  clusters: Array<{ clusterId: string; pages: number; hostnames: string[] }>
+}
+
+export type OfficialAudit = {
+  hasObservation: boolean
+  runId?: string
+  observedAt?: string
+  score?: number | null
+  analyzedPages?: number
+  calculationVersion?: string
+  duplicateNormalizedUrls?: number
+  queries: OfficialQueryAudit[]
 }
