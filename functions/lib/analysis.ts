@@ -1,4 +1,4 @@
-import type { MetricKey, SearchItem } from './types'
+import type { LivePageEvidence, MetricKey, PrimarySourceConfidence, SearchItem } from './types'
 
 const STOP_WORDS = new Set([
   'the', 'and', 'for', 'with', 'from', 'that', 'this', 'what', 'when', 'where', 'how', 'why', 'about', 'into', 'your', 'best', 'guide', 'news',
@@ -18,6 +18,17 @@ export type AnalysisWindow = {
 export type RankedPage = { queryId: string; query: string; domain: string; normalizedUrl: string; title: string; rank: number }
 export type SearchChangeStatus = 'still_ranked' | 'rank_changed' | 'dropped_from_top_10' | 'dropped_from_top_20' | 'newly_ranked' | 'returned_to_results'
 export type SearchRankChange = RankedPage & { previousRank: number | null; currentRank: number | null; status: SearchChangeStatus }
+export type QueryObservationStatus = 'complete' | 'partial' | 'failed'
+export type Top10Coverage = 'complete' | 'partial' | 'unavailable'
+export type ExtendedTop20Coverage = 'available' | 'partial' | 'unavailable'
+
+export const classifyObservationCoverage = (input: { requestedCount: number; returnedCount: number; providerFailed?: boolean }) => {
+  const top10Target = Math.min(10, Math.max(1, input.requestedCount))
+  const queryObservationStatus: QueryObservationStatus = input.providerFailed || input.returnedCount === 0 ? 'failed' : input.returnedCount >= top10Target ? 'complete' : 'partial'
+  const top10Coverage: Top10Coverage = input.returnedCount >= top10Target ? 'complete' : input.returnedCount > 0 ? 'partial' : 'unavailable'
+  const extendedTop20Coverage: ExtendedTop20Coverage = input.returnedCount >= input.requestedCount ? 'available' : input.returnedCount > top10Target ? 'partial' : 'unavailable'
+  return { queryObservationStatus, top10Coverage, extendedTop20Coverage }
+}
 
 const domainOf = (raw: string) => { try { return new URL(raw).hostname.replace(/^www\./, '').toLowerCase() } catch { return 'unavailable' } }
 const normalize = (value: string) => value.toLowerCase().replace(/[「」『』。、！？,.!?()（）【】]/g, ' ').replaceAll('[', ' ').replaceAll(']', ' ').replace(/[^\p{L}\p{N}\s-]/gu, ' ').replace(/\s+/g, ' ').trim()
@@ -27,6 +38,16 @@ const similarity = (a: string, b: string) => { const left = new Set(tokens(a)); 
 export const normalizeUrl = (raw: string) => { try { const url = new URL(raw); url.hash = ''; url.hostname = url.hostname.toLowerCase(); if (url.pathname !== '/') url.pathname = url.pathname.replace(/\/+$/, ''); return url.toString() } catch { return raw } }
 export const classifyHttpStatus = (status: number | 'timeout') => status === 'timeout' ? 'timeout' : status >= 200 && status < 300 ? 'ok' : status >= 300 && status < 400 ? 'redirect' : status >= 400 && status < 500 ? 'client_error' : 'server_error'
 export const isLikelyPrimary = (hostname: string) => /\.(gov|mil|edu)$|\.go\.jp$|\.ac\.jp$|(^|\.)gov\.|who\.int$|un\.org$|census\.gov$|nasa\.gov$|nist\.gov$/.test(hostname)
+const queryTokens = (query: string) => tokens(query).filter((token) => token.length > 2)
+export const classifyPrimarySource = (query: string, item: SearchItem, evidence?: LivePageEvidence): PrimarySourceConfidence => {
+  const hostname = domainOf(item.url)
+  const queryMatch = queryTokens(query).some((token) => hostname.includes(token) || normalize(item.title).includes(token))
+  if (evidence?.fullContent && isLikelyPrimary(hostname)) return 'verified_primary_source'
+  if (evidence?.fullContent && queryMatch) return 'likely_primary_source'
+  if (!evidence?.fullContent && (isLikelyPrimary(hostname) || queryMatch)) return 'official_source_candidate'
+  if (!evidence) return 'unevaluable'
+  return 'not_primary'
+}
 
 const METRIC_WEIGHTS: Record<MetricKey, number> = { originality: 0.3, sourceHealth: 0.3, diversity: 0.2, persistence: 0.2 }
 export const calculateWeightedMetricScore = (metrics: Array<{ key: MetricKey; value: number | null }>) => {
@@ -64,7 +85,7 @@ const analyzeWindow = (items: SearchItem[]): AnalysisWindow => {
   }
 }
 
-export const analyzeResults = (query: string, items: SearchItem[], provider: 'brave' | 'sample', resultCount = 20) => {
+export const analyzeResults = (query: string, items: SearchItem[], provider: 'brave' | 'sample', resultCount = 20, pageEvidence?: Map<string, LivePageEvidence>) => {
   const limited = items.slice(0, resultCount)
   const top10Items = limited.slice(0, 10)
   const top10 = analyzeWindow(top10Items)
@@ -74,6 +95,19 @@ export const analyzeResults = (query: string, items: SearchItem[], provider: 'br
   const top10MetricList = Object.entries(metrics).map(([key, value]) => ({ key: key as MetricKey, label: label(key), value, definition: '', sampleSize: top10Items.length, unit: value === null ? 'history required' : 'score / 100' }))
   const groups: Array<{ items: SearchItem[]; key: string }> = []
   for (const item of limited) { const matching = groups.find((group) => similarity(`${item.title} ${item.description}`, `${group.items[0].title} ${group.items[0].description}`) >= .22); if (matching) matching.items.push(item); else groups.push({ items: [item], key: String.fromCharCode(97 + groups.length) }) }
+  const evidence = limited.map((item) => pageEvidence?.get(normalizeUrl(item.url)))
+  const fullPagesRetrieved = evidence.filter((item) => item?.fullContent).length
+  const fullPagesUnavailable = pageEvidence ? limited.length - fullPagesRetrieved : 0
+  const primaryConfidence = limited.map((item, index) => classifyPrimarySource(query, item, evidence[index]))
+  const primarySourceEvaluableResults = pageEvidence ? primaryConfidence.filter((confidence) => confidence === 'verified_primary_source' || confidence === 'likely_primary_source').length : 0
+  const primarySourceUnevaluableResults = pageEvidence ? limited.length - fullPagesRetrieved : limited.length
+  const qualityLevel = limited.length === 0 ? 'insufficient_data' : fullPagesRetrieved === limited.length ? 'full_content' : fullPagesRetrieved > 0 ? 'mixed_content' : 'snippet_only'
+  const similarityGroups = qualityLevel === 'snippet_only' ? [] : groups.filter((group) => group.items.length > 1)
+  const similarityGroupCount = similarityGroups.length
+  const similarityGroupResultCount = similarityGroups.reduce((sum, group) => sum + group.items.length, 0)
+  const primarySourceCandidates = limited.map((item, index) => ({ title: item.title, url: normalizeUrl(item.url), confidence: primaryConfidence[index] })).filter((item) => item.confidence === 'verified_primary_source' || item.confidence === 'likely_primary_source' || item.confidence === 'official_source_candidate')
+  const fetchFailureReasons = [...(pageEvidence?.values() ?? [])].filter((item) => item.failureReason).reduce<Record<string, number>>((counts, item) => { const reason = item.failureReason!; counts[reason] = (counts[reason] ?? 0) + 1; return counts }, {})
+  const limitations = pageEvidence && fullPagesRetrieved === 0 ? ['Page bodies were not available; similarity and primary-source assessment are based on search snippets only.'] : ['Search-result analysis is bounded to the returned result window.']
   return {
     query, source: provider, observedAt: new Date().toISOString(), totalResults: limited.length, distinctDomains: top10.distinctDomains, lineageCount: top10.lineageCount, primarySourceReach: top10.primarySourceReach, highSimilarityPairs: top10.highSimilarityPairs, unavailableCount: Math.max(0, resultCount - limited.length),
     metrics: top10MetricList,
@@ -81,7 +115,23 @@ export const analyzeResults = (query: string, items: SearchItem[], provider: 'br
     top20: { ...top20, score: calculateWeightedMetricScore(Object.entries({ ...top20.metrics, persistence: null as number | null }).map(([key, value]) => ({ key: key as MetricKey, value }))) },
     clusters: groups.map((group, index) => ({ id: group.key, label: `Lineage ${String.fromCharCode(65 + index)}`, resultCount: group.items.length, color: COLORS[index % COLORS.length], primarySource: group.items[0].title, confidence: 'estimated' as const })),
     pages: limited.map((item, index) => ({ title: item.title, domain: domainOf(item.url), clusterId: groups.find((group) => group.items.includes(item))?.key ?? 'a', sourceType: index === 0 ? 'search result' : 'related page', url: normalizeUrl(item.url) })),
-    note: 'Estimated from search-result titles, descriptions, and URLs. Page bodies are not republished.',
+    note: qualityLevel === 'snippet_only' ? 'Provisional analysis based on search-result titles, descriptions, and URLs. Page bodies were not retrieved.' : 'Analysis uses retrieved page metadata without republishing page bodies.',
+    searchResultsRetrieved: limited.length,
+    fullPagesRetrieved,
+    fullPagesUnavailable,
+    snippetOnlyResults: Math.max(0, limited.length - fullPagesRetrieved),
+    fullContentResults: fullPagesRetrieved,
+    primarySourceEvaluableResults,
+    primarySourceUnevaluableResults,
+    qualityLevel,
+    primarySourceAssessment: pageEvidence && fullPagesRetrieved === 0 ? 'not_evaluable' : 'evaluable',
+    similarityGroupCount,
+    similarityGroupResultCount,
+    independentResultCount: groups.filter((group) => group.items.length === 1).length,
+    analysisBasis: fullPagesRetrieved > 0 ? 'full_content' : 'search_snippets',
+    primarySourceCandidates,
+    fetchFailureReasons,
+    limitations,
   }
 }
 

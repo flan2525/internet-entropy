@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { analyzeResults, calculateWeightedMetricScore, canCalculatePersistence, classifyHttpStatus, normalizeUrl, PERSISTENCE_REQUIREMENTS } from '../functions/lib/analysis'
+import { analyzeResults, calculateWeightedMetricScore, canCalculatePersistence, classifyHttpStatus, classifyObservationCoverage, normalizeUrl, PERSISTENCE_REQUIREMENTS } from '../functions/lib/analysis'
 
 describe('analysis primitives', () => {
   it('normalizes URL fragments and trailing slashes', () => {
@@ -45,5 +45,29 @@ describe('analysis primitives', () => {
     expect(canCalculatePersistence({ hasPreviousRun: false, hasPageFetchMetadata: true })).toBe(false)
     expect(canCalculatePersistence({ hasPreviousRun: true, hasPageFetchMetadata: false })).toBe(false)
     expect(canCalculatePersistence({ hasPreviousRun: true, hasPageFetchMetadata: true })).toBe(true)
+  })
+
+  it('separates primary Top 10 completeness from extended Top 20 coverage', () => {
+    expect(classifyObservationCoverage({ requestedCount: 20, returnedCount: 10 })).toEqual({ queryObservationStatus: 'complete', top10Coverage: 'complete', extendedTop20Coverage: 'unavailable' })
+    expect(classifyObservationCoverage({ requestedCount: 20, returnedCount: 15 })).toEqual({ queryObservationStatus: 'complete', top10Coverage: 'complete', extendedTop20Coverage: 'partial' })
+    expect(classifyObservationCoverage({ requestedCount: 20, returnedCount: 20 })).toEqual({ queryObservationStatus: 'complete', top10Coverage: 'complete', extendedTop20Coverage: 'available' })
+    expect(classifyObservationCoverage({ requestedCount: 20, returnedCount: 1 })).toEqual({ queryObservationStatus: 'partial', top10Coverage: 'partial', extendedTop20Coverage: 'unavailable' })
+    expect(classifyObservationCoverage({ requestedCount: 20, returnedCount: 0, providerFailed: true })).toEqual({ queryObservationStatus: 'failed', top10Coverage: 'unavailable', extendedTop20Coverage: 'unavailable' })
+  })
+
+  it('labels live analysis quality and keeps primary assessment unevaluable without body evidence', () => {
+    const items = Array.from({ length: 10 }, (_, index) => ({ title: `Result ${index + 1}`, url: `https://example.com/${index + 1}`, description: `Snippet ${index + 1}` }))
+    const snippetOnly = analyzeResults('Yahoo Japan', items, 'brave', 20, new Map())
+    expect(snippetOnly.qualityLevel).toBe('snippet_only')
+    expect(snippetOnly.fullPagesRetrieved).toBe(0)
+    expect(snippetOnly.primarySourceAssessment).toBe('not_evaluable')
+    expect(snippetOnly.similarityGroupCount).toBe(0)
+    const mixedEvidence = new Map(items.map((item, index) => [item.url, { fullContent: index === 0, primaryConfidence: index === 0 ? 'official_source_candidate' as const : 'unevaluable' as const }]))
+    const mixed = analyzeResults('Google Gemini', items, 'brave', 20, mixedEvidence)
+    expect(mixed.qualityLevel).toBe('mixed_content')
+    expect(mixed.fullPagesRetrieved).toBe(1)
+    const full = analyzeResults('Google Gemini', items, 'brave', 20, new Map(items.map((item) => [item.url, { fullContent: true, primaryConfidence: 'likely_primary_source' as const }])))
+    expect(full.qualityLevel).toBe('full_content')
+    expect(full.primarySourceAssessment).toBe('evaluable')
   })
 })

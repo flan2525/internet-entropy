@@ -21,6 +21,19 @@ export type VerificationResult = {
   retryCount: number
 }
 
+export const classifyVerificationFailure = (result: VerificationResult) => {
+  if (result.robotsStatus === 'blocked') return 'robots.txt'
+  if (result.errorReason?.includes('SSRF')) return 'SSRF protection rejection'
+  if (result.errorReason?.includes('redirect loop') || result.errorReason?.includes('too many redirects')) return 'redirect loop'
+  if (result.errorReason?.includes('timeout') || result.errorReason?.includes('aborted')) return 'timeout'
+  if (result.httpStatus === 403) return '403'
+  if (result.httpStatus === 429) return '429'
+  if (result.contentType && !/html|text\//i.test(result.contentType)) return 'unsupported Content-Type'
+  if (result.errorReason?.toLowerCase().includes('parse')) return 'parse failure'
+  if (result.errorReason?.toLowerCase().includes('javascript')) return 'JavaScript-dependent page'
+  return result.errorReason ? 'other' : 'other'
+}
+
 const TIMEOUT_MS = 7000
 const MAX_REDIRECTS = 5
 const MAX_BODY_BYTES = 65536

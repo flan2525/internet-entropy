@@ -1,4 +1,6 @@
 export type MetricKey = 'originality' | 'sourceHealth' | 'diversity' | 'persistence'
+export type LiveQualityLevel = 'full_content' | 'mixed_content' | 'snippet_only' | 'insufficient_data'
+export type PrimarySourceConfidence = 'verified_primary_source' | 'likely_primary_source' | 'official_source_candidate' | 'not_primary' | 'unevaluable'
 export type ObservationRunType = 'scheduled' | 'manual_official' | 'verification' | 'diagnostic' | 'legacy'
 export type Locale = 'en' | 'zh-CN' | 'ja' | 'de' | 'ru'
 
@@ -21,6 +23,22 @@ export type ExperimentResult = {
   clusters: LineageCluster[]
   pages: Array<{ title: string; domain: string; clusterId: string; sourceType: string; url: string }>
   note: string
+  searchResultsRetrieved: number
+  fullPagesRetrieved: number
+  fullPagesUnavailable: number
+  snippetOnlyResults: number
+  fullContentResults: number
+  primarySourceEvaluableResults: number
+  primarySourceUnevaluableResults: number
+  qualityLevel: LiveQualityLevel
+  primarySourceAssessment: 'evaluable' | 'not_evaluable'
+  similarityGroupCount: number
+  similarityGroupResultCount: number
+  independentResultCount: number
+  analysisBasis: 'full_content' | 'search_snippets'
+  primarySourceCandidates: Array<{ title: string; url: string; confidence: PrimarySourceConfidence }>
+  fetchFailureReasons: Record<string, number>
+  limitations: string[]
 }
 
 export type DisappearanceEvent = { id: number; normalized_url: string; title: string; domain: string; query: string; previous_rank: number | null; last_seen_at: string; updated_at?: string; search_status: string; web_status: string; redirect_url: string | null; confidence: string; evidence: string; first_observed_at: string }
@@ -51,11 +69,13 @@ export type OfficialOverview = {
   uniqueNormalizedUrls: number
   duplicateNormalizedUrls: number
   top20Available: number
-  statusCounts: { success: number; partial: number; failure: number }
+  top10Coverage: { complete: number; total: number }
+  extendedTop20Coverage: { available: number; partial: number; unavailable: number }
+  statusCounts: { complete: number; partial: number; failed: number }
   domains: Array<{ name: string; score: number | null; top20Score: number | null; pages: number; observedAt: string | null }>
   monitor: DisappearanceMonitor
 }
 export type OfficialQueryAudit = {
-  domain: string; query: string; query_id?: string | null; query_type?: string | null; query_rationale?: string | null; requested_count: number; returned_count: number; status: 'success' | 'partial' | 'failure'; score: number | null; top20_score: number | null; metrics: Record<string, number | null>; top10Metrics: Record<string, number | null>; top20Metrics: Record<string, number | null>; missingMetrics: string[]; error_reason: string | null; clusters: Array<{ clusterId: string; pages: number; hostnames: string[] }>
+  domain: string; query: string; query_id?: string | null; query_type?: string | null; query_rationale?: string | null; requested_count: number; returned_count: number; status: 'complete' | 'partial' | 'failed' | 'success' | 'failure'; query_observation_status?: 'complete' | 'partial' | 'failed'; top10_coverage?: 'complete' | 'partial' | 'unavailable'; extended_top20_coverage?: 'available' | 'partial' | 'unavailable'; score: number | null; top20_score: number | null; metrics: Record<string, number | null>; top10Metrics: Record<string, number | null>; top20Metrics: Record<string, number | null>; missingMetrics: string[]; error_reason: string | null; clusters: Array<{ clusterId: string; pages: number; hostnames: string[] }>
 }
-export type OfficialAudit = { hasObservation: boolean; panelId?: string; runId?: string; runType?: string; observedAt?: string; score?: number | null; top20Score?: number | null; analyzedPages?: number; calculationVersion?: string; methodologyVersion?: string; queriesObserved?: number; resultsCollected?: number; uniqueNormalizedUrls?: number; duplicateNormalizedUrls?: number; top20Available?: number; statusCounts?: { success: number; partial: number; failure: number }; queries: OfficialQueryAudit[] }
+export type OfficialAudit = { hasObservation: boolean; panelId?: string; runId?: string; runType?: string; observedAt?: string; score?: number | null; top20Score?: number | null; analyzedPages?: number; calculationVersion?: string; methodologyVersion?: string; queriesObserved?: number; resultsCollected?: number; uniqueNormalizedUrls?: number; duplicateNormalizedUrls?: number; top20Available?: number; top10Coverage?: { complete: number; total: number }; extendedTop20Coverage?: { available: number; partial: number; unavailable: number }; statusCounts?: { complete: number; partial: number; failed: number }; queries: OfficialQueryAudit[] }

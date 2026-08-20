@@ -14,10 +14,10 @@ run種別はscheduleを `scheduled`、運用で明示した公式実行を `manu
 
 次回の正式観測では、前回の正式runとクエリ別の正規化URLを比較し、`added`、`disappeared`、`persisted`、`rank_changed` を `observation_page_changes` に保存する。ページ取得メタデータを有効化した場合に限り、`redirect` と `unavailable`、HTTP状態、リダイレクト先、取得不能理由を保存する。本文を取得しない限り内容変更と本文ハッシュは未計算のままとし、推定値を保存しない。
 
-Brave Search APIの当該実行のアプリケーション側消費量は、固定クエリ数と `apiRequests` で確認する。アカウント全体の月間残量・請求額はBraveのAPI Dashboardで確認し、APIキー自体はログ・レスポンス・静的配信物へ出さない。
+Brave Search APIの当該実行のアプリケーション側消費量は、固定クエリ数と `apiRequests` で確認する。`count=20` はリクエストへ含めるが、主観測はTop 10であり、11〜20件の追加paginationは行わない。1検索語診断は `.github/workflows/brave-diagnostic.yml` から実行でき、Web results件数とHTTPステータスだけを出力し、APIキー・検索結果本文・タイトルは出力しない。アカウント全体の月間残量・請求額はBraveのAPI Dashboardで確認し、APIキー自体はログ・レスポンス・静的配信物へ出さない。
 
 The HTTP verifier never treats a single failure as disappearance. It records `url_verification_history` and updates `url_verification_queue`; `disappearance_events` keeps search departure, web state, evidence, confidence, first observation, and redirect target separate. The public monitor returns `Not enough observation history yet` until a previous official run exists, rather than displaying invented zero counts.
 
 ## キャッシュと保持
 
-ライブ結果は30分のD1キャッシュ。匿名レート制限はCache APIで同一IP・検索語を日次相当で抑える。IPはD1へ保存しない。`live_runs`は必要最小限の期間で削除する。
+ライブ結果は短期のD1キャッシュ。匿名レート制限はCache APIで同一IP・検索語を抑える。IPはD1へ保存しない。共有ボタンを押した場合のみ `live_share_snapshots` へ30日間保存し、推測困難なUUIDで `/en/live/{id}` 等から再現する。共有ページはBrave APIを再実行せず、`X-Robots-Tag: noindex, nofollow` を返す。期限切れは410で表示し、期限切れスナップショットは定期削除または遅延削除の対象とする。
