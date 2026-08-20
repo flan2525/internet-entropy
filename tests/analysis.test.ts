@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { analyzeResults, classifyHttpStatus, normalizeUrl } from '../functions/lib/analysis'
+import { analyzeResults, calculateWeightedMetricScore, classifyHttpStatus, normalizeUrl } from '../functions/lib/analysis'
 
 describe('analysis primitives', () => {
   it('normalizes URL fragments and trailing slashes', () => {
@@ -22,5 +22,20 @@ describe('analysis primitives', () => {
     expect(result.lineageCount).toBe(2)
     expect(result.totalResults).toBe(3)
     expect(result.primarySourceReach).toBe(1)
+  })
+
+  it('reweights available metric weights when persistence is missing', () => {
+    expect(calculateWeightedMetricScore([
+      { key: 'originality', value: 100 },
+      { key: 'sourceHealth', value: 0 },
+      { key: 'diversity', value: 100 },
+      { key: 'persistence', value: null },
+    ])).toBe(63)
+    expect(calculateWeightedMetricScore([
+      { key: 'originality', value: null },
+      { key: 'sourceHealth', value: null },
+      { key: 'diversity', value: null },
+      { key: 'persistence', value: null },
+    ])).toBeNull()
   })
 })

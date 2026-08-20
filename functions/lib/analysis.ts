@@ -1,4 +1,4 @@
-import type { SearchItem } from './types'
+import type { MetricKey, SearchItem } from './types'
 
 const STOP_WORDS = new Set(['です', 'ます', 'する', 'こと', 'ため', 'から', 'まで', 'について', '情報', '最新', '解説', 'まとめ'])
 const COLORS = ['#42c7b5', '#e7b75b', '#5794d0', '#a08de0']
@@ -10,6 +10,13 @@ const similarity = (a: string, b: string) => { const left = new Set(tokens(a)); 
 
 export const normalizeUrl = (raw: string) => { try { const url = new URL(raw); url.hash = ''; url.hostname = url.hostname.toLowerCase(); if (url.pathname !== '/') url.pathname = url.pathname.replace(/\/+$/, ''); return url.toString() } catch { return raw } }
 export const classifyHttpStatus = (status: number | 'timeout') => status === 'timeout' ? 'timeout' : status >= 200 && status < 300 ? 'ok' : status >= 300 && status < 400 ? 'redirect' : status >= 400 && status < 500 ? 'client_error' : 'server_error'
+
+const METRIC_WEIGHTS: Record<MetricKey, number> = { originality: 0.3, sourceHealth: 0.3, diversity: 0.2, persistence: 0.2 }
+export const calculateWeightedMetricScore = (metrics: Array<{ key: MetricKey; value: number | null }>) => {
+  const available = metrics.filter((metric) => metric.value !== null)
+  const availableWeight = available.reduce((sum, metric) => sum + METRIC_WEIGHTS[metric.key], 0)
+  return availableWeight ? Math.round(available.reduce((sum, metric) => sum + (metric.value ?? 0) * METRIC_WEIGHTS[metric.key], 0) / availableWeight) : null
+}
 
 export const makeSampleResult = (query: string) => {
   const domains = ['example-media.jp', 'news-example.jp', 'media-sample.jp', 'public-example.go.jp', 'review-sample.jp', 'journal-example.org', 'note-sample.jp']

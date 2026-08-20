@@ -1,4 +1,4 @@
-import { analyzeResults, normalizeUrl } from '../../lib/analysis'
+import { analyzeResults, calculateWeightedMetricScore, normalizeUrl } from '../../lib/analysis'
 import { searchWeb } from '../../lib/provider'
 import type { PagesContext } from '../../lib/types'
 import { json } from '../../lib/validation'
@@ -33,8 +33,7 @@ export const onRequestPost = async ({ request, env }: PagesContext) => {
       const response = await searchWeb(item.query, env)
       const result = analyzeResults(item.query, response.items, response.provider)
       const values = Object.fromEntries(result.metrics.map((metric) => [metric.key, metric.value])) as Record<string, number | null>
-      const available = Object.values(values).filter((value): value is number => value !== null)
-      const score = available.length ? Math.round(available.reduce((sum, value) => sum + value, 0) / available.length) : null
+      const score = calculateWeightedMetricScore(result.metrics)
       const missingMetrics = result.metrics.filter((metric) => metric.value === null).map((metric) => metric.label)
       const status = result.totalResults === 10 ? 'success' : 'partial'
       audits.push({ domain: item.domain, query: item.query, requestedCount: 10, returnedCount: result.totalResults, status, score, metrics: values, missingMetrics, errorReason: null })
